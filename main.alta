@@ -4,23 +4,51 @@ import Exception from "exceptions"
 import parseNumber, numberToString from "util"
 import String from "string"
 
+# @brief An invalid address component index was provided
+# @desc An exception thrown by Address's subscript operator
+#       when the provided subscript index exceeds the maximum
+#       for the Address:
+#         * 3 (base-0) for IPv4
+#         * 7 (base-0) for IPv6
 export class InvalidComponentIndex extends Exception {}
+
+# @brief An invalid address string was provided
+# @desc An exception thrown by Address's String cast constructor
+#       when the provided string is invalid for either IPv4 or IPv6.
+#
+#       For IPv4:
+#         * If less than 3 dots are found
+#         * If more than 3 dots are found
+#
+#       For IPv6:
+#         * If less than 8 components are found (and no consecutive shorthand is found)
+#         * If multiple consecutive shorthands are found
+#         * If more than 8 components are found
 export class InvalidAddress extends Exception {}
 
 export class Address {
   private var _isV6 = false
   private var _components = new Vector<uint16>(6)
 
+  # @brief Constructs an IPv4 `Address` with all components initialized to 0
   public constructor() {
     for i: uint8 in 0..4 {
       this._components.push(0)
     }
   }
-  public constructor(isIPV6: bool) {
-    for i: uint8 in 0..(isIPV6 ? 8 : 4) {
+
+  # @brief Constructs an `Address` with all components intialized to 0
+  #
+  # @param isIPv6 If `true`, the new address will be IPv6. Otherwise, it will be IPv4
+  public constructor(isIPv6: bool) {
+    for i: uint8 in 0..(isIPv6 ? 8 : 4) {
       this._components.push(0)
     }
   }
+
+  # @brief Constructs an `Address` by parsing the given string as an IPv4 or IPv6 address
+  #
+  # @param address The string to parse as an address
   public @from constructor(address: String) {
     let found = false
     for i: Size in 0..address.length {
@@ -90,6 +118,14 @@ export class Address {
       let second = address.indexOf('.', after: first)
       let third = address.indexOf('.', after: second)
 
+      if first == SizeMaximum || second == SizeMaximum || third == SizeMaximum {
+        throw new InvalidAddress
+      }
+
+      if address.indexOf('.', after: third) != SizeMaximum {
+        throw new InvalidAddress
+      }
+
       this._components[0] = parseNumber<uint16>(address.substring(from: 0, to: first))
       this._components[1] = parseNumber<uint16>(address.substring(from: first + 1, to: second))
       this._components[2] = parseNumber<uint16>(address.substring(from: second + 1, to: third))
@@ -97,16 +133,26 @@ export class Address {
     }
   }
 
-  public @read function isIPV4(): bool {
+  # @brief If true, this address is an [IPv4](https://en.wikipedia.org/wiki/IPv4) address.
+  public @read function isIPv4(): bool {
     return !this._isV6
   }
-  public @read function isIPV6(): bool {
+
+  # @brief If true, this address is an [IPv6](https://en.wikipedia.org/wiki/IPv6) address.
+  public @read function isIPv6(): bool {
     return this._isV6
   }
 
-  # limit index to uint8 since we can only have up to 8 components
-  # limit return value to uint16 since we components can have a maximum of 16 bits
+  # @brief Accesses a component at the specified index
+  # @returns A reference to the component at the index
+  # @param $ The index of the desired component
+  # @note Throws an InvalidComponentIndex error when trying to access past the:
+  #         * 3rd index (base-0) for IPv4
+  #         * 7th index (base-0) for IPv6
   public this[uint8]: ref uint16 {
+    # limit index to uint8 since we can only have up to 8 components
+    # limit return value to uint16 since we components can have a maximum of 16 bits
+
     if this._isV6 && $ > 7 {
       throw new InvalidComponentIndex
     } else if !this._isV6 && $ > 3 {
@@ -115,6 +161,11 @@ export class Address {
     return this._components[$]
   }
 
+  # @returns A string representation of this Address
+  # @note IPv6 addresses will be represented with full shorthand (i.e. leading zeros and
+  #       consecutive zero components omitted) and components will be in hexadecimal format
+  # @note IPv4 addresses will be represented normally&mdash;i.e. decimal formatted
+  #       components joined with dots (`.`)
   public to String {
     if this._isV6 {
       let longestIdx: uint8 = 0
