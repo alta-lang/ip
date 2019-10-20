@@ -1,5 +1,5 @@
 import Vector from "vector"
-import uint8, uint16, Size, SizeMaximum from "types"
+import uint8, uint16, uint32, Size, SizeMaximum, UInt32ToUInt8, UInt16ToUInt8 from "types"
 import Exception from "exceptions"
 import parseNumber, numberToString from "util"
 import String from "string"
@@ -25,6 +25,15 @@ export class InvalidComponentIndex extends Exception {}
 #         * If multiple consecutive shorthands are found
 #         * If more than 8 components are found
 export class InvalidAddress extends Exception {}
+
+# @brief An invalid operation was performed on the given address
+# @desc An exception thrown when trying to perform an operation
+#       on an Address that doesn't support that operation. This
+#       usually means you've tried to use an IPv4 Address like
+#       an IPv6 one or vice versa (for example, trying to coerce
+#       an IPv6 Address to a uint32, something only IPv4 Addresses
+#       can do).
+export class InvalidAddressType extends Exception {}
 
 export class Address {
   private var _isV6 = false
@@ -53,16 +62,10 @@ export class Address {
     let found = false
     for i: Size in 0..address.length {
       if address[i] == ':' {
-        found = true
         this._isV6 = true
-        break
-      } else if address[i] == '.' {
-        found = true
         break
       }
     }
-    if !found
-      throw new InvalidAddress
     for i: uint8 in 0..(this._isV6 ? 8 : 4) {
       this._components.push(0)
     }
@@ -118,18 +121,42 @@ export class Address {
       let second = address.indexOf('.', after: first)
       let third = address.indexOf('.', after: second)
 
-      if first == SizeMaximum || second == SizeMaximum || third == SizeMaximum {
+      if first != SizeMaximum && second != SizeMaximum && third != SizeMaximum && address.indexOf('.', after: third) != SizeMaximum {
         throw new InvalidAddress
       }
 
-      if address.indexOf('.', after: third) != SizeMaximum {
-        throw new InvalidAddress
+      if first == SizeMaximum {
+        # a (uint32)
+        let num: UInt32ToUInt8 = parseNumber<uint32>(address)
+        this._components[0] = num.part4
+        this._components[1] = num.part3
+        this._components[2] = num.part2
+        this._components[3] = num.part1
+      } else if second == SizeMaximum {
+        # a.b (uint8.uint24)
+        # no 24-bit integer type so just upgrade it to uint32
+        let num: UInt32ToUInt8 = parseNumber<uint32>(address.substring(from: first + 1, to: address.length))
+        this._components[0] = parseNumber<uint8>(address.substring(from: 0, to: first))
+        this._components[1] = num.part3
+        this._components[2] = num.part2
+        this._components[3] = num.part1
+      } else if third == SizeMaximum {
+        # a.b.c (uint8.uint8.uint16)
+        let num: UInt16ToUInt8 = parseNumber<uint16>(address.substring(from: second + 1, to: address.length))
+        this._components[0] = parseNumber<uint8>(address.substring(from: 0, to: first))
+        this._components[1] = parseNumber<uint8>(address.substring(from: first + 1, to: second))
+        this._components[2] = num.part2
+        this._components[3] = num.part1
+      } else {
+        # a.b.c.d (uint8.uint8.uint.uint8)
+        # this is the standard notation for IPv4 addresses
+        # the others have just been added for compatibility with conventions
+        # established by IP parsing functions in other languages (such as `inet_aton`)
+        this._components[0] = parseNumber<uint16>(address.substring(from: 0, to: first))
+        this._components[1] = parseNumber<uint16>(address.substring(from: first + 1, to: second))
+        this._components[2] = parseNumber<uint16>(address.substring(from: second + 1, to: third))
+        this._components[3] = parseNumber<uint16>(address.substring(from: third + 1, to: address.length))
       }
-
-      this._components[0] = parseNumber<uint16>(address.substring(from: 0, to: first))
-      this._components[1] = parseNumber<uint16>(address.substring(from: first + 1, to: second))
-      this._components[2] = parseNumber<uint16>(address.substring(from: second + 1, to: third))
-      this._components[3] = parseNumber<uint16>(address.substring(from: third + 1, to: address.length))
     }
   }
 
@@ -229,5 +256,18 @@ export class Address {
         numberToString<uint16>(this._components[2], 10) + '.' +
         numberToString<uint16>(this._components[3], 10)
     }
+  }
+
+  public to uint32 {
+    if this._isV6
+      throw new InvalidAddressType
+
+    let num: UInt32ToUInt8 = 0
+    num.part1 = this._components[3]
+    num.part2 = this._components[2]
+    num.part3 = this._components[1]
+    num.part4 = this._components[0]
+
+    return num
   }
 }

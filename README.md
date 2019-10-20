@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/github/license/alta-lang/ip?color=%23428bff)](LICENSE)
 
 An IP address parsing/serialization library for Alta.
-Fully supports IPv6 shorthand syntax.
+Fully supports (standard) IPv6 shorthand syntax and (non-standard) IPv4 shorthand.
 
 ## Documentation
 Check out the [docs](docs).
@@ -100,3 +100,11 @@ if userInputAddr.isIPv4 {
   # it's IPv6
 }
 ```
+
+## Notes
+### IPv4
+According to the standards, IPv4 address should only be represented as either a single, 32-bit decimal or 4 8-bit decimals. These two forms look like `a` or `a.b.c.d`. However, the [inet_aton](https://linux.die.net/man/3/inet_aton) function commonly used on Linux (and some other Unix OSes like macOS) also supports two more address representations: `a.b` and `a.b.c`.
+
+The first form (`a.b`) is the first octet (i.e. 8-bit decimal) followed by a 24-bit decimal representing the last three octects of the address. The second form (`a.b.c`) consists of the first two octets followed by a 16-bit value representing the last two octets.
+
+Note that for all the forms with multiple parts representing the final decimal (`a.b`, `a.b.c`, and `a.b.c.d`), the octets are orded in LE (little-endian) order, meaning that `192` in `192.168.1.1` represents the highest octet (bits 24-32) in the full 32-bit decimal value for the address, for example.
